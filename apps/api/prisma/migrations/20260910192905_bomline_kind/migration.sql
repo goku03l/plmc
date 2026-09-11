@@ -1,0 +1,5 @@
+-- CreateEnum
+CREATE TYPE "BomLineKind" AS ENUM ('MATERIAL', 'LABOR', 'EQUIPMENT', 'TRANSPORT', 'OVERHEAD');
+
+-- AlterTable
+ALTER TABLE "BomLine" ADD COLUMN     "kind" "BomLineKind" NOT NULL DEFAULT 'MATERIAL';

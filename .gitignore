@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.bak
+*.log
+.DS_Store
+coverage/
+.vite/
+apps/web/dist/
+apps/api/uploads/

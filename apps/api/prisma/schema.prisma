@@ -1,0 +1,324 @@
+// PLMC data model
+// -----------------------------------------------------------------------------
+// Project ─┬─ Category[]        configurable classification (Interiors, MEP, ...)
+//          └─ Node[]  (self-referencing tree = the DMU / product structure)
+//                 └─ BomLine[]  Bill of Materials attached to a node
+//                        └─ Material?  optional link to the reusable catalog
+// -----------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  CLOSED
+}
+
+/// A construction project - the root of a DMU tree.
+model Project {
+  id          String        @id @default(cuid())
+  code        String        @unique
+  name        String
+  description String?
+  client      String?
+  location    String?
+  currency    String        @default("USD")
+  status      ProjectStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  categories Category[]
+  nodes      Node[]
+  rfqs       Rfq[]
+}
+
+/// Fully configurable classification for structure nodes.
+/// Seeded per project (Structure, Exteriors, Interiors, MEP, Sitework) but
+/// entirely editable by the user.
+model Category {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  key       String
+  label     String
+  color     String  @default("#64748b")
+  sortOrder Int     @default(0)
+
+  nodes Node[]
+
+  @@unique([projectId, key])
+}
+
+enum NodeType {
+  GROUP // top-level grouping (phase / discipline)
+  SUBGROUP // nested grouping (Interiors > Level 2)
+  ASSEMBLY // a buildable assembly (wall type, slab system)
+  COMPONENT // leaf component
+}
+
+/// The nature of a BOM line's cost. Non-material kinds (labour, plant hire,
+/// transport, documentation / permits / preliminaries) have no catalog material
+/// and are rolled up into their own cost buckets.
+enum BomLineKind {
+  MATERIAL
+  LABOR
+  EQUIPMENT
+  TRANSPORT
+  OVERHEAD
+}
+
+/// A node in the product-structure / DMU tree. Parent-child is self-referencing.
+model Node {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  parentId String?
+  parent   Node?   @relation("NodeChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children Node[]  @relation("NodeChildren")
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  name       String
+  type       NodeType @default(GROUP)
+  refCode    String?
+  quantity   Float    @default(1) // number of this subtree that the parent contains
+  uom        String   @default("ea")
+  notes      String?
+  attributes Json     @default("{}") // free-form construction detail (spec, phase, trade...)
+  sortOrder  Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  bomLines    BomLine[]
+  rfqs        Rfq[]
+  attachments NodeAttachment[]
+
+  @@index([projectId])
+  @@index([parentId])
+}
+
+/// A file attached to a node — drawings, photos, spec sheets, anything. No type
+/// or extension restriction: whatever the user uploads is stored as-is.
+model NodeAttachment {
+  id         String   @id @default(cuid())
+  nodeId     String
+  node       Node     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  filename   String // original file name, as uploaded
+  storedName String // name on disk under uploads/nodes/
+  mimeType   String
+  size       Int
+  uploadedAt DateTime @default(now())
+
+  @@index([nodeId])
+}
+
+/// Reusable material / resource catalog (global for the MVP).
+model Material {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  name       String
+  category   String?
+  uom        String   @default("ea")
+  unitCost   Float    @default(0)
+  wastagePct Float    @default(0)
+  spec       Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  bomLines  BomLine[]
+  suppliers MaterialSupplier[]
+}
+
+/// A single Bill of Materials line, attached to a DMU node.
+model BomLine {
+  id     String @id @default(cuid())
+  nodeId String
+  node   Node   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  materialId String?
+  material   Material? @relation(fields: [materialId], references: [id], onDelete: SetNull)
+
+  // the supplier selected to actually furnish this line (per project / tower / node)
+  supplierId String?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  kind               BomLineKind @default(MATERIAL)
+  description        String // snapshot label (defaults to the material name)
+  quantity          Float  @default(1)
+  uom               String @default("ea")
+  unitCost          Float  @default(0) // snapshot; editable independent of the catalog
+  wastagePct        Float  @default(0) // MATERIAL only
+  laborCost         Float  @default(0) // MATERIAL only: installation labour per unit of quantity
+  constructionDetail Json  @default("{}") // method, phase, trade, spec references
+  sortOrder         Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rfqItems RfqItem[]
+
+  @@index([nodeId])
+}
+
+// ---------------------------------------------------------------------------
+// Procurement: suppliers, RFQs and the tokenised supplier response portal
+// ---------------------------------------------------------------------------
+
+/// A vendor / subcontractor the project can send RFQs to.
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  legalName String?
+  gstin     String?
+  trades    String[] @default([]) // free-form tags: "Concrete", "Joinery", "MEP"...
+  email     String? // primary/fallback address if no contact is primary
+  phone     String?
+  website   String?
+  address   String?
+  city      String?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contacts     SupplierContact[]
+  materialLinks MaterialSupplier[]
+  rfqInvites   RfqSupplier[]
+  bomLines     BomLine[]
+}
+
+model SupplierContact {
+  id         String   @id @default(cuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  name       String
+  email      String
+  phone      String?
+  role       String?
+  isPrimary  Boolean  @default(false)
+
+  @@index([supplierId])
+}
+
+/// Which suppliers can quote a given catalog material.
+model MaterialSupplier {
+  id         String   @id @default(cuid())
+  materialId String
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  preferred  Boolean  @default(false)
+
+  @@unique([materialId, supplierId])
+  @@index([supplierId])
+}
+
+enum RfqStatus {
+  DRAFT
+  SENT
+  RESPONSES
+  AWARDED
+  CLOSED
+  CANCELLED
+}
+
+/// A request for quotation, anchored to a project and (optionally) a DMU node.
+model Rfq {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodeId    String?
+  node      Node?     @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  number    String    @unique // RFQ-0001
+  title     String
+  status    RfqStatus @default(DRAFT)
+  scope     String? // instructions to bidders
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  items     RfqItem[]
+  suppliers RfqSupplier[]
+
+  @@index([projectId])
+  @@index([nodeId])
+}
+
+model RfqItem {
+  id          String   @id @default(cuid())
+  rfqId       String
+  rfq         Rfq      @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  bomLineId   String?
+  bomLine     BomLine? @relation(fields: [bomLineId], references: [id], onDelete: SetNull)
+  description String
+  quantity   Float    @default(1)
+  uom        String   @default("ea")
+  targetCost Float? // internal budget reference, never shown to suppliers
+  sortOrder  Int      @default(0)
+
+  quotes RfqQuote[]
+
+  @@index([rfqId])
+}
+
+/// One supplier invited onto an RFQ, plus their response.
+model RfqSupplier {
+  id           String    @id @default(cuid())
+  rfqId        String
+  rfq          Rfq       @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  supplierId   String
+  supplier     Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  token        String    @unique // magic-link token for the portal
+  email        String // address the invite was/will be sent to
+  createdAt    DateTime  @default(now())
+  sentAt       DateTime?
+  viewedAt     DateTime?
+  respondedAt  DateTime?
+  currency     String    @default("INR")
+  leadTimeDays Int?
+  notes        String?
+  totalQuoted  Float?
+  awarded      Boolean   @default(false)
+
+  quotes      RfqQuote[]
+  attachments RfqAttachment[]
+
+  @@unique([rfqId, supplierId])
+  @@index([supplierId])
+}
+
+model RfqQuote {
+  id            String      @id @default(cuid())
+  rfqSupplierId String
+  rfqSupplier   RfqSupplier @relation(fields: [rfqSupplierId], references: [id], onDelete: Cascade)
+  rfqItemId     String
+  rfqItem       RfqItem     @relation(fields: [rfqItemId], references: [id], onDelete: Cascade)
+  unitPrice     Float       @default(0)
+  notes         String?
+
+  @@unique([rfqSupplierId, rfqItemId])
+}
+
+model RfqAttachment {
+  id            String      @id @default(cuid())
+  rfqSupplierId String
+  rfqSupplier   RfqSupplier @relation(fields: [rfqSupplierId], references: [id], onDelete: Cascade)
+  filename      String // original file name
+  storedName    String // name on disk under uploads/rfq/
+  mimeType      String
+  size          Int
+  source        String      @default("SUPPLIER") // SUPPLIER | INTERNAL
+  uploadedAt    DateTime    @default(now())
+
+  @@index([rfqSupplierId])
+}

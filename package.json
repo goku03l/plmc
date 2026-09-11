@@ -1,0 +1,24 @@
+{
+  "name": "plmc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PLM/BOM for Construction - configurable project structure (DMU) with attached Bill of Materials and cost roll-up.",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "npm run dev --workspace @plmc/api",
+    "dev:web": "npm run dev --workspace @plmc/web",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "db:migrate": "npm run prisma:migrate --workspace @plmc/api",
+    "db:seed": "npm run prisma:seed --workspace @plmc/api",
+    "db:studio": "npm run prisma:studio --workspace @plmc/api",
+    "setup": "npm install && npm run db:up && node ./scripts/wait-for-db.mjs && npm run db:migrate && npm run db:seed"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
