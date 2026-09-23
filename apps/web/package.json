@@ -1,18 +1,23 @@
 {
-  "name": "@plmc/web",
+  "name": "@summer/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "serve -s dist -l $PORT"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.66.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.29.0"
+    "react-router-dom": "^6.29.0",
+    "serve": "^14.2.4"
   },
   "devDependencies": {
     "@types/react": "^18.3.18",

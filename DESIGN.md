@@ -1,4 +1,4 @@
-# PLMC — Design
+# Summer — Design
 
 PLM/BOM for construction. This document covers the domain model, architecture,
 the reasoning behind each decision, and the roadmap beyond the MVP.

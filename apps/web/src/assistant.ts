@@ -1,4 +1,5 @@
 // ---- assistant streaming + voice helpers ----
+import { API_BASE } from "./api";
 
 export type AgentEvent =
   | { type: "text"; delta: string }
@@ -21,7 +22,7 @@ export async function streamChat(
   onEvent: (e: AgentEvent) => void,
   signal?: AbortSignal,
 ) {
-  const res = await fetch("/api/agent/chat", {
+  const res = await fetch(`${API_BASE}/agent/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -248,7 +249,7 @@ export async function transcribeAudio(
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   const b64 = btoa(bin);
   try {
-    const res = await fetch("/api/agent/stt", {
+    const res = await fetch(`${API_BASE}/agent/stt`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ audio: b64, mime, language: lang }),
@@ -372,7 +373,7 @@ export function createSpeech(lang: Lang, opts?: { onStart?: () => void; onEnd?: 
     pending++;
     const ac = new AbortController();
     acs.add(ac);
-    fetch("/api/agent/tts", {
+    fetch(`${API_BASE}/agent/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: sentence.slice(0, 2000), language: lang }),

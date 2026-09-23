@@ -1,4 +1,8 @@
-const BASE = "/api";
+// In dev (and when the web app is served from the same origin as the API in
+// production) this stays "/api", relative to whatever host served the page.
+// Set VITE_API_URL (build-time) when the API is a separate deployed service.
+export const API_BASE = (import.meta.env.VITE_API_URL ?? "") + "/api";
+const BASE = API_BASE;
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const isForm = typeof FormData !== "undefined" && init?.body instanceof FormData;

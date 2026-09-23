@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useRfq, useRfqMutations, useSuppliers } from "../hooks";
+import { API_BASE } from "../api";
 import { money } from "../format";
 import { STATUS_LABEL } from "./RfqsPage";
 import type { Rfq } from "../types";
@@ -387,7 +388,7 @@ function Comparison({ rfq, m, cur }: { rfq: Rfq; m: M; cur: string }) {
             {suppliers.flatMap((s) =>
               s.attachments.map((a) => (
                 <li key={a.id}>
-                  <a href={`/api/rfqs/${rfq.id}/attachments/${a.id}`} target="_blank" rel="noreferrer">
+                  <a href={`${API_BASE}/rfqs/${rfq.id}/attachments/${a.id}`} target="_blank" rel="noreferrer">
                     {a.filename}
                   </a>{" "}
                   <span className="muted xs">

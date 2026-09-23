@@ -1,10 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { agentEnabled, runAgent, type AgentEvent } from "../agent/chat.js";
+import { runAgent, type AgentEvent } from "../agent/chat.js";
+import { agentEnabled, MODEL, provider } from "../agent/provider.js";
 import { ttsEnabled, synthesize } from "../agent/tts.js";
 import { sttEnabled, transcribe } from "../agent/stt.js";
-
-const MODEL = process.env.AGENT_MODEL || "claude-sonnet-5";
 
 const chatBody = z.object({
   language: z.enum(["en", "hi", "ta"]).default("en"),
@@ -35,6 +34,7 @@ export async function agentRoutes(app: FastifyInstance) {
   app.get("/agent/status", async () => ({
     enabled: agentEnabled,
     model: MODEL,
+    provider,
     tts: ttsEnabled,
     stt: sttEnabled,
     languages: ["en", "hi", "ta"],

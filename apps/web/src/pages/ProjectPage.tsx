@@ -24,7 +24,7 @@ export default function ProjectPage() {
     <div className="page project-page">
       <div className="page-head">
         <div>
-          <Link to="/" className="muted small">
+          <Link to="/projects" className="muted small">
             ← Projects
           </Link>
           <h1>

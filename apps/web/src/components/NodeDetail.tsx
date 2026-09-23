@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { API_BASE } from "../api";
 import type { BomLine, BomLineKind, Category, NodeAttachment, NodeType } from "../types";
 import { BOM_LINE_KINDS, BOM_LINE_KIND_LABEL } from "../types";
 import {
@@ -208,7 +209,7 @@ function DocumentsPanel({ nodeId, attachments }: { nodeId: string; attachments: 
         {attachments.map((a) => (
           <li key={a.id}>
             <span aria-hidden>{fileIcon(a.filename)}</span>
-            <a href={`/api/nodes/${nodeId}/attachments/${a.id}`} target="_blank" rel="noreferrer">
+            <a href={`${API_BASE}/nodes/${nodeId}/attachments/${a.id}`} target="_blank" rel="noreferrer">
               {a.filename}
             </a>
             <span className="muted xs">

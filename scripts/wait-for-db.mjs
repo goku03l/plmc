@@ -4,7 +4,7 @@ import { execSync } from "node:child_process";
 const RETRIES = 30;
 for (let i = 1; i <= RETRIES; i++) {
   try {
-    execSync("docker exec plmc-db pg_isready -U plmc -d plmc", { stdio: "ignore" });
+    execSync("docker exec summer-db pg_isready -U summer -d summer", { stdio: "ignore" });
     console.log("database is ready");
     process.exit(0);
   } catch {

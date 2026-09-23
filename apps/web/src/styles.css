@@ -780,6 +780,9 @@ label select {
 }
 .chk {
   display: inline-flex;
+  /* the global `label` rule stacks children in a column — a checkbox and its
+     caption belong side by side */
+  flex-direction: row;
   align-items: center;
   gap: 5px;
   font-size: 12px;
@@ -1162,4 +1165,249 @@ label select {
 .conv-dot.think {
   background: var(--accent);
   animation: pulse 1.4s ease-in-out infinite;
+}
+
+/* ---------- inventory ---------- */
+
+/* coverage status dot on a material row */
+.pill.status-covered,
+.pill.status-partial,
+.pill.status-none {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.pill.status-covered {
+  background: #16a34a;
+}
+.pill.status-partial {
+  background: #f59e0b;
+}
+.pill.status-none {
+  background: #dc2626;
+}
+
+.stat-value.tone-ok {
+  color: #16a34a;
+}
+.stat-value.tone-warn {
+  color: #b45309;
+}
+.stat-value.tone-bad {
+  color: #dc2626;
+}
+
+.coverage-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.coverage-bar .bar-fill.ok {
+  background: #16a34a;
+  height: 100%;
+}
+
+/* expanded per-warehouse breakdown under a coverage row */
+.cov-loc td {
+  background: #f8fafc;
+  border-top: none;
+}
+
+/* movement type chips */
+.chip.t-receipt {
+  background: #dcfce7;
+  color: #166534;
+}
+.chip.t-issue {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.chip.t-adjustment {
+  background: #fef9c3;
+  color: #854d0e;
+}
+.chip.t-transfer_in,
+.chip.t-transfer_out {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+/* receive / issue / correct / transfer dialog */
+.move-dialog {
+  min-width: 420px;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.move-dialog .form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.move-dialog .form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.move-dialog .form-grid input,
+.move-dialog .form-grid select {
+  width: 100%;
+}
+
+/* centred modal overlay (the stock move dialog) */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.45);
+}
+.modal-backdrop > .card {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.25);
+}
+
+/* ======================= landing page ======================= */
+.landing {
+  min-height: 100vh;
+  background:
+    radial-gradient(700px 380px at 85% -10%, #dbeafe 0%, rgba(219, 234, 254, 0) 65%),
+    var(--bg);
+}
+.landing-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 20px 0;
+}
+.landing-topbar .brand {
+  font-weight: 700;
+  font-size: 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.landing-hero {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 72px 20px 48px;
+  text-align: center;
+}
+.landing-eyebrow {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 14px;
+}
+.landing-title {
+  font-size: 38px;
+  line-height: 1.25;
+  font-weight: 700;
+  margin: 0 0 18px;
+  letter-spacing: -0.01em;
+}
+.landing-lede {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--muted);
+  margin: 0 auto 28px;
+  max-width: 620px;
+}
+.landing-cta {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.landing-cta .btn {
+  padding: 10px 20px;
+  font-size: 14px;
+}
+
+.landing-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  text-align: center;
+  margin: 0 0 20px;
+}
+
+.landing-scenarios {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px 20px;
+}
+.scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.scenario-card {
+  margin-bottom: 0;
+}
+.scenario-q {
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+.scenario-a {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.landing-pillars {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 40px 20px 24px;
+}
+.pillar-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.pillar {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.pillar-label {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 3px;
+}
+.pillar-detail {
+  line-height: 1.4;
+}
+
+.landing-footer {
+  display: flex;
+  justify-content: center;
+  padding: 40px 20px 80px;
+}
+
+@media (max-width: 640px) {
+  .landing-title {
+    font-size: 28px;
+  }
+  .landing-cta {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }

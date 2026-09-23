@@ -13,6 +13,12 @@ import type {
   RfqListRow,
   Supplier,
   SupplierAssignments,
+  Warehouse,
+  StockItem,
+  StockMovement,
+  StockMovementType,
+  StockReservation,
+  ProjectAvailability,
 } from "./types";
 
 /* ---------- projects ---------- */
@@ -324,3 +330,153 @@ export function useAssignSupplier(projectId: string) {
     },
   });
 }
+
+/* ---------- inventory ---------- */
+export const useWarehouses = () =>
+  useQuery({ queryKey: ["warehouses"], queryFn: () => api.get<Warehouse[]>("/warehouses") });
+
+export function useWarehouseMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["warehouses"] });
+    qc.invalidateQueries({ queryKey: ["stock"] });
+  };
+  return {
+    create: useMutation({
+      mutationFn: (b: Partial<Warehouse>) => api.post<Warehouse>("/warehouses", b),
+      onSuccess: invalidate,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...b }: Partial<Warehouse> & { id: string }) => api.patch<Warehouse>(`/warehouses/${id}`, b),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({ mutationFn: (id: string) => api.del(`/warehouses/${id}`), onSuccess: invalidate }),
+  };
+}
+
+export const useStock = (opts: { warehouseId?: string; q?: string; lowOnly?: boolean } = {}) => {
+  const params = new URLSearchParams();
+  if (opts.warehouseId) params.set("warehouseId", opts.warehouseId);
+  if (opts.q) params.set("q", opts.q);
+  if (opts.lowOnly) params.set("lowOnly", "true");
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ["stock", opts.warehouseId ?? "", opts.q ?? "", opts.lowOnly ? "low" : ""],
+    queryFn: () => api.get<StockItem[]>(`/stock${qs ? `?${qs}` : ""}`),
+  });
+};
+
+export const useStockMovements = (opts: { warehouseId?: string; materialId?: string; projectId?: string } = {}) => {
+  const params = new URLSearchParams();
+  if (opts.warehouseId) params.set("warehouseId", opts.warehouseId);
+  if (opts.materialId) params.set("materialId", opts.materialId);
+  if (opts.projectId) params.set("projectId", opts.projectId);
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ["movements", opts.warehouseId ?? "", opts.materialId ?? "", opts.projectId ?? ""],
+    queryFn: () => api.get<StockMovement[]>(`/stock/movements${qs ? `?${qs}` : ""}`),
+  });
+};
+
+/** Anything that shifts a balance must refresh stock, the ledger and coverage. */
+function useStockInvalidate() {
+  const qc = useQueryClient();
+  return () => {
+    qc.invalidateQueries({ queryKey: ["stock"] });
+    qc.invalidateQueries({ queryKey: ["movements"] });
+    qc.invalidateQueries({ queryKey: ["availability"] });
+    qc.invalidateQueries({ queryKey: ["warehouses"] });
+    qc.invalidateQueries({ queryKey: ["reservations"] });
+  };
+}
+
+export function useStockMutations() {
+  const invalidate = useStockInvalidate();
+  return {
+    upsert: useMutation({
+      mutationFn: (b: {
+        warehouseId: string;
+        materialId: string;
+        onHand: number;
+        minLevel?: number;
+        binLocation?: string | null;
+        unitCost?: number;
+      }) => api.post<StockItem>("/stock", b),
+      onSuccess: invalidate,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...b }: { id: string; minLevel?: number; binLocation?: string | null; unitCost?: number }) =>
+        api.patch<StockItem>(`/stock/${id}`, b),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({ mutationFn: (id: string) => api.del(`/stock/${id}`), onSuccess: invalidate }),
+    move: useMutation({
+      mutationFn: (b: {
+        warehouseId: string;
+        materialId: string;
+        type: StockMovementType;
+        quantity: number;
+        projectId?: string | null;
+        nodeId?: string | null;
+        reference?: string | null;
+        note?: string | null;
+        unitCost?: number;
+      }) => api.post("/stock/movements", b),
+      onSuccess: invalidate,
+    }),
+    transfer: useMutation({
+      mutationFn: (b: {
+        fromWarehouseId: string;
+        toWarehouseId: string;
+        materialId: string;
+        quantity: number;
+        reference?: string | null;
+        note?: string | null;
+      }) => api.post("/stock/transfer", b),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export const useReservations = (opts: { projectId?: string; warehouseId?: string } = {}) => {
+  const params = new URLSearchParams();
+  if (opts.projectId) params.set("projectId", opts.projectId);
+  if (opts.warehouseId) params.set("warehouseId", opts.warehouseId);
+  const qs = params.toString();
+  return useQuery({
+    queryKey: ["reservations", opts.projectId ?? "", opts.warehouseId ?? ""],
+    queryFn: () => api.get<StockReservation[]>(`/stock/reservations${qs ? `?${qs}` : ""}`),
+  });
+};
+
+export function useReservationMutations() {
+  const invalidate = useStockInvalidate();
+  return {
+    create: useMutation({
+      mutationFn: (b: {
+        stockItemId: string;
+        projectId: string;
+        nodeId?: string | null;
+        quantity: number;
+        note?: string | null;
+      }) => api.post<StockReservation>("/stock/reservations", b),
+      onSuccess: invalidate,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...b }: { id: string; quantity?: number; note?: string | null }) =>
+        api.patch<StockReservation>(`/stock/reservations/${id}`, b),
+      onSuccess: invalidate,
+    }),
+    remove: useMutation({ mutationFn: (id: string) => api.del(`/stock/reservations/${id}`), onSuccess: invalidate }),
+  };
+}
+
+export const useProjectAvailability = (projectId: string, warehouseId?: string) =>
+  useQuery({
+    queryKey: ["availability", projectId, warehouseId ?? ""],
+    queryFn: () =>
+      api.get<ProjectAvailability>(
+        `/projects/${projectId}/availability${warehouseId ? `?warehouseId=${warehouseId}` : ""}`,
+      ),
+    enabled: !!projectId,
+  });

@@ -7,7 +7,7 @@
  *   Tower 3 (Adyar)      – 2 BHK · 10 per floor · 80 apartments
  *   + basement/podium parking, clubhouse, pool, gym, and full site infrastructure.
  *
- * Run:  npm run -w @plmc/api exec -- tsx prisma/seed-thuniv.ts
+ * Run:  npm run -w @summer/api exec -- tsx prisma/seed-thuniv.ts
  *   or: cd apps/api && npx tsx prisma/seed-thuniv.ts
  */
 import { PrismaClient } from "@prisma/client";

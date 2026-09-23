@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { API_BASE } from "../api";
 import {
   createRecognizer,
   createSpeech,
@@ -17,7 +18,7 @@ import {
   type Speech,
 } from "../assistant";
 
-const MESSAGES_KEY = "plmc.assistant.messages";
+const MESSAGES_KEY = "summer.assistant.messages";
 
 function loadStoredMessages(): ChatMessage[] {
   try {
@@ -96,25 +97,25 @@ export default function AssistantPage() {
   // the server-side context was always fine.
   const [messages, setMessages] = useState<ChatMessage[]>(loadStoredMessages);
   const [input, setInput] = useState("");
-  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("plmc.assistant.lang") as Lang) || "en");
+  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("summer.assistant.lang") as Lang) || "en");
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<{ text: string; tools: { name: string; done?: boolean }[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [speakOn, setSpeakOn] = useState(() => localStorage.getItem("plmc.assistant.voice") === "1");
+  const [speakOn, setSpeakOn] = useState(() => localStorage.getItem("summer.assistant.voice") === "1");
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [convMode, setConvMode] = useState(
-    () => localStorage.getItem("plmc.assistant.conv") === "1" && speechSupported(),
+    () => localStorage.getItem("summer.assistant.conv") === "1" && speechSupported(),
   );
   // "Allow changes" — off by default (read-only), same as the app's own design intent.
-  const [operateMode, setOperateMode] = useState(() => localStorage.getItem("plmc.assistant.operate") === "1");
+  const [operateMode, setOperateMode] = useState(() => localStorage.getItem("summer.assistant.operate") === "1");
   const operateRef = useRef(operateMode);
   const [status, setStatus] = useState<{ enabled: boolean; model: string; tts?: boolean; stt?: boolean } | null>(null);
   const sttOkRef = useRef(true); // flips false if the server says STT isn't configured
 
   const [mics, setMics] = useState<{ deviceId: string; label: string }[]>([]);
-  const [micId, setMicId] = useState(() => localStorage.getItem("plmc.assistant.mic") || "default");
+  const [micId, setMicId] = useState(() => localStorage.getItem("summer.assistant.mic") || "default");
   const micIdRef = useRef(micId);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -141,7 +142,7 @@ export default function AssistantPage() {
   const speechCancelledRef = useRef(false); // barge-in: stop the current reply from resuming speech
 
   useEffect(() => {
-    fetch("/api/agent/status")
+    fetch(`${API_BASE}/agent/status`)
       .then((r) => r.json())
       .then((s) => {
         setStatus(s);
@@ -157,7 +158,7 @@ export default function AssistantPage() {
   }, []);
   useEffect(() => {
     micIdRef.current = micId;
-    localStorage.setItem("plmc.assistant.mic", micId);
+    localStorage.setItem("summer.assistant.mic", micId);
   }, [micId]);
   useEffect(() => {
     try {
@@ -166,17 +167,17 @@ export default function AssistantPage() {
       /* storage full/blocked — the conversation still works, it just won't survive a reload */
     }
   }, [messages]);
-  useEffect(() => localStorage.setItem("plmc.assistant.lang", lang), [lang]);
+  useEffect(() => localStorage.setItem("summer.assistant.lang", lang), [lang]);
   useEffect(() => {
     langRef.current = lang;
   }, [lang]);
   useEffect(() => {
     speakOnRef.current = speakOn;
-    localStorage.setItem("plmc.assistant.voice", speakOn ? "1" : "0");
+    localStorage.setItem("summer.assistant.voice", speakOn ? "1" : "0");
   }, [speakOn]);
   useEffect(() => {
     operateRef.current = operateMode;
-    localStorage.setItem("plmc.assistant.operate", operateMode ? "1" : "0");
+    localStorage.setItem("summer.assistant.operate", operateMode ? "1" : "0");
   }, [operateMode]);
   useEffect(() => {
     speakingRef.current = speaking;
@@ -472,7 +473,7 @@ export default function AssistantPage() {
     const on = !convMode;
     setConvMode(on);
     convRef.current = on;
-    localStorage.setItem("plmc.assistant.conv", on ? "1" : "0");
+    localStorage.setItem("summer.assistant.conv", on ? "1" : "0");
     if (on) {
       if (!speakOn) setSpeakOn(true);
       speakOnRef.current = true;
@@ -510,7 +511,7 @@ export default function AssistantPage() {
     <div className="page assistant-page">
       <div className="page-head">
         <div>
-          <h1>Assistant</h1>
+          <h1>Summer</h1>
           <p className="muted small">
             Read-only · asks the app for real numbers · {status?.model || "…"}
             {status?.tts === false && " · basic voice"}

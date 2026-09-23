@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "../api";
+import { api, API_BASE } from "../api";
 import { money } from "../format";
 import type { PortalView } from "../types";
 
@@ -200,7 +200,7 @@ export default function PortalPage() {
         <ul className="attach-list">
           {data.attachments.map((a) => (
             <li key={a.id}>
-              <a href={`/api/portal/${token}/files/${a.id}`} target="_blank" rel="noreferrer">
+              <a href={`${API_BASE}/portal/${token}/files/${a.id}`} target="_blank" rel="noreferrer">
                 {a.filename}
               </a>{" "}
               <span className="muted xs">

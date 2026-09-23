@@ -15,6 +15,7 @@ import { portalRoutes } from "./routes/portal.js";
 import { procurementRoutes } from "./routes/procurement.js";
 import { agentRoutes } from "./routes/agent.js";
 import { attachmentRoutes } from "./routes/attachments.js";
+import { inventoryRoutes } from "./routes/inventory.js";
 
 export function buildApp() {
   const app = Fastify({
@@ -41,6 +42,7 @@ export function buildApp() {
   app.register(procurementRoutes, { prefix: "/api" });
   app.register(agentRoutes, { prefix: "/api" });
   app.register(attachmentRoutes, { prefix: "/api" });
+  app.register(inventoryRoutes, { prefix: "/api" });
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof ZodError) {

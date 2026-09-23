@@ -1,4 +1,4 @@
-// PLMC data model
+// Summer data model
 // -----------------------------------------------------------------------------
 // Project ─┬─ Category[]        configurable classification (Interiors, MEP, ...)
 //          └─ Node[]  (self-referencing tree = the DMU / product structure)
@@ -38,6 +38,9 @@ model Project {
   categories Category[]
   nodes      Node[]
   rfqs       Rfq[]
+
+  stockMovements    StockMovement[]
+  stockReservations StockReservation[]
 }
 
 /// Fully configurable classification for structure nodes.
@@ -104,6 +107,9 @@ model Node {
   rfqs        Rfq[]
   attachments NodeAttachment[]
 
+  stockMovements    StockMovement[]
+  stockReservations StockReservation[]
+
   @@index([projectId])
   @@index([parentId])
 }
@@ -138,6 +144,9 @@ model Material {
 
   bomLines  BomLine[]
   suppliers MaterialSupplier[]
+
+  stockItems     StockItem[]
+  stockMovements StockMovement[]
 }
 
 /// A single Bill of Materials line, attached to a DMU node.
@@ -155,13 +164,13 @@ model BomLine {
 
   kind               BomLineKind @default(MATERIAL)
   description        String // snapshot label (defaults to the material name)
-  quantity          Float  @default(1)
-  uom               String @default("ea")
-  unitCost          Float  @default(0) // snapshot; editable independent of the catalog
-  wastagePct        Float  @default(0) // MATERIAL only
-  laborCost         Float  @default(0) // MATERIAL only: installation labour per unit of quantity
-  constructionDetail Json  @default("{}") // method, phase, trade, spec references
-  sortOrder         Int    @default(0)
+  quantity           Float       @default(1)
+  uom                String      @default("ea")
+  unitCost           Float       @default(0) // snapshot; editable independent of the catalog
+  wastagePct         Float       @default(0) // MATERIAL only
+  laborCost          Float       @default(0) // MATERIAL only: installation labour per unit of quantity
+  constructionDetail Json        @default("{}") // method, phase, trade, spec references
+  sortOrder          Int         @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -191,10 +200,10 @@ model Supplier {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contacts     SupplierContact[]
+  contacts      SupplierContact[]
   materialLinks MaterialSupplier[]
-  rfqInvites   RfqSupplier[]
-  bomLines     BomLine[]
+  rfqInvites    RfqSupplier[]
+  bomLines      BomLine[]
 }
 
 model SupplierContact {
@@ -261,10 +270,10 @@ model RfqItem {
   bomLineId   String?
   bomLine     BomLine? @relation(fields: [bomLineId], references: [id], onDelete: SetNull)
   description String
-  quantity   Float    @default(1)
-  uom        String   @default("ea")
-  targetCost Float? // internal budget reference, never shown to suppliers
-  sortOrder  Int      @default(0)
+  quantity    Float    @default(1)
+  uom         String   @default("ea")
+  targetCost  Float? // internal budget reference, never shown to suppliers
+  sortOrder   Int      @default(0)
 
   quotes RfqQuote[]
 
@@ -321,4 +330,128 @@ model RfqAttachment {
   uploadedAt    DateTime    @default(now())
 
   @@index([rfqSupplierId])
+}
+
+// ---------------------------------------------------------------------------
+// Inventory: what is already sitting in a warehouse, so the project only buys
+// the shortfall.
+//
+//   Warehouse ──< StockItem >── Material      current balance per location
+//                    │
+//                    ├──< StockMovement       the ledger that moved it
+//                    └──< StockReservation    earmarked for a project
+//
+// `onHand` is the physical count. `reserved` is the part of it already spoken
+// for by a project (sum of that item's reservations). available = onHand -
+// reserved — that is the number the shortfall view nets BOM demand against.
+// ---------------------------------------------------------------------------
+
+/// A physical stock location — a site store, a central yard, a rented godown.
+model Warehouse {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  location  String?
+  address   String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stockItems   StockItem[]
+  movements    StockMovement[]
+  reservations StockReservation[]
+}
+
+/// The balance of one material at one warehouse.
+model StockItem {
+  id          String    @id @default(cuid())
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  materialId  String
+  material    Material  @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  onHand      Float   @default(0)
+  reserved    Float   @default(0) // kept in step with the reservations below
+  minLevel    Float   @default(0) // reorder point; below this the item reads "low"
+  binLocation String? // aisle / rack / bay within the warehouse
+  uom         String  @default("ea") // snapshot of the material uom at creation
+  unitCost    Float   @default(0) // last landed cost, for valuing the stock
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  movements    StockMovement[]
+  reservations StockReservation[]
+
+  @@unique([warehouseId, materialId])
+  @@index([materialId])
+}
+
+/// Why stock moved. Quantities are always stored positive; the type carries the
+/// sign (RECEIPT and TRANSFER_IN add, ISSUE and TRANSFER_OUT subtract,
+/// ADJUSTMENT is a signed correction to a counted figure).
+enum StockMovementType {
+  RECEIPT
+  ISSUE
+  ADJUSTMENT
+  TRANSFER_IN
+  TRANSFER_OUT
+}
+
+/// One append-only entry in the stock ledger. Deleting a warehouse or material
+/// removes its history with it (consistent with the app's hard-cascade stance),
+/// but nothing edits or deletes an individual movement — a mistake is corrected
+/// with an ADJUSTMENT so the trail stays readable.
+model StockMovement {
+  id          String     @id @default(cuid())
+  warehouseId String
+  warehouse   Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  materialId  String
+  material    Material   @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  stockItemId String?
+  stockItem   StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+
+  type     StockMovementType
+  quantity Float // always positive; `type` decides the direction
+  uom      String            @default("ea")
+  unitCost Float             @default(0)
+
+  // optional attribution — which job/part of the tree consumed or received it
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  nodeId    String?
+  node      Node?    @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+
+  reference String? // delivery note, PO, RFQ number, gate pass
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([warehouseId])
+  @@index([materialId])
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+/// Stock physically still in the warehouse but earmarked for a project, so
+/// another project's shortfall view doesn't count it as available.
+model StockReservation {
+  id          String    @id @default(cuid())
+  stockItemId String
+  stockItem   StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  nodeId      String?
+  node        Node?     @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+
+  quantity Float
+  note     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([stockItemId])
+  @@index([projectId])
 }

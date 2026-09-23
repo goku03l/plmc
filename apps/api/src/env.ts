@@ -13,7 +13,7 @@ export const env = {
   // just a sane upper bound so an unauthenticated caller can't fill the disk.
   uploadMaxBytes: Number(process.env.UPLOAD_MAX_MB ?? 500) * 1024 * 1024,
   mail: {
-    from: process.env.MAIL_FROM ?? "PLMC Procurement <procurement@plmc.local>",
+    from: process.env.MAIL_FROM ?? "Summer Procurement <procurement@summer.local>",
     // when SMTP_HOST is unset the mailer uses a no-send JSON transport and logs
     // the message (fine for local dev); set these for real delivery.
     host: process.env.SMTP_HOST ?? "",

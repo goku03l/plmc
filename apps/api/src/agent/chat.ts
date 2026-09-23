@@ -1,13 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import { READONLY_TOOLS, ALL_TOOLS } from "./tools.js";
 import { actionKey } from "./helpers.js";
+import { MODEL, client, agentEnabled, notConfiguredMessage, reasoningParams } from "./provider.js";
 
-const MODEL = process.env.AGENT_MODEL || "claude-sonnet-5";
-const EFFORT = (process.env.AGENT_EFFORT || "medium") as "low" | "medium" | "high" | "xhigh" | "max";
 const MAX_ITERS = 12;
 
-export const agentEnabled = Boolean(process.env.ANTHROPIC_API_KEY);
-const client = agentEnabled ? new Anthropic() : null;
+export { agentEnabled };
 
 const LANG_NAME: Record<string, string> = { en: "English", hi: "Hindi (हिन्दी)", ta: "Tamil (தமிழ்)" };
 
@@ -27,22 +25,25 @@ Performing actions — most of this is Claude-Code-style: act on clear intent, t
   2. Relay that preview and ask the user to confirm. Never call the same tool with confirm:true in the same reply where you first describe it.
   3. Only call it again with \`confirm: true\` after the user's NEXT message clearly agrees (any language/phrasing — "yes", "haan", "seri", "go ahead" all count). If they say no or change the subject, drop it.
   4. If a call errors saying it wasn't previewed yet, you tried to confirm too early — call it again without confirm and wait for their reply.
+- **Check stock before assuming something must be bought.** If the user asks to raise an RFQ or asks what to order, call \`get_project_coverage\` first and quote the shortfall, not the full BOM quantity — buying what's already in the warehouse is the mistake this data exists to prevent.
+- Stock movements (\`record_stock_movement\`, \`transfer_stock\`, \`reserve_stock\`) are ordinary bookkeeping and run immediately. A wrong entry is fixed with another ADJUSTMENT, never by deleting — the ledger is append-only.
 - To actually send an RFQ: invite suppliers first (invite_rfq_suppliers, no confirmation needed), then send_rfq_emails (does need confirmation, since it emails real people).
 - Never guess an id. Look one up first with search_nodes / get_node / list_materials / list_suppliers / list_rfqs, and if more than one thing matches, ask which.
 - **One RFQ per request, not one per node.** If the user wants a single RFQ for something repeated across many nodes (e.g. "raise an RFQ for the windows" when there are 24 window lines across 24 apartments), do NOT call create_rfq once per node. Instead use search_bom_lines to gather the matching lines across the project (or a subtree), then make ONE create_rfq call with an explicit \`items\` array — either one aggregated line (summed quantity) if they just want a total, or one item per bomLineId for per-unit traceability. Use add_rfq_items to bundle in more lines later if the RFQ already exists.
 - If the user is clearly making several changes in a row, keep going turn after turn without re-explaining the whole plan each time — treat it like a normal back-and-forth, not a fresh approval each step.`
     : "";
 
-  return `You are the assistant inside **PLMC**, a construction PLM / BOM web application. You help the user understand their projects by reading data through tools. ${capability}
+  return `You are the assistant inside **Summer**, a construction PLM / BOM web application. You help the user understand their projects by reading data through tools. ${capability}
 
 Domain model:
 - A **Project** has a **DMU tree** of Nodes (GROUP → SUBGROUP → ASSEMBLY → COMPONENT). Each node has a **quantity** meaning "how many of this subtree the parent contains" (so a "Typical Floor ×8" or an apartment "×10" is instanced, not duplicated).
 - Every node can carry **BOM lines**. A line has a **kind**: MATERIAL (catalog rate + wastage + install labour) or the flat non-material kinds LABOUR / EQUIPMENT / TRANSPORT / OVERHEAD.
 - Cost roll-up: line total → node directCost → rolledCost = quantity × (directCost + Σ child rolledCost). The project total is the sum of the top-level nodes.
+- **Inventory**: **Warehouses** hold physical stock of catalog materials. Each stock line has an on-hand quantity, a part of it possibly **reserved** for a specific project, and a reorder (minimum) level. Every change is written to an append-only **ledger** (received / issued / corrected / transferred). The point of it: \`get_project_coverage\` nets a project's BOM demand against what's already in the warehouses, so "what do we still have to buy" is the shortfall, not the full BOM.
 - **Materials** are a global catalog. **Suppliers** have contacts and trades. A BOM line can have an assigned **supplier** (per project/tower/node). **RFQs** are sent to suppliers, who quote back through a portal; the app compares quotes and records an award. An RFQ's line items are NOT limited to one node — one RFQ can bundle lines gathered from many different nodes (see the RFQ rule below).
 
 How to work:
-- Use tools to get real numbers — never guess costs or counts. Prefer \`get_cost_summary\` for "what does it cost / where's the money", \`search_nodes\` then \`get_node\` for specifics, \`get_supplier_assignments\` for "who supplies X and where".
+- Use tools to get real numbers — never guess costs or counts. Prefer \`get_cost_summary\` for "what does it cost / where's the money", \`search_nodes\` then \`get_node\` for specifics, \`get_supplier_assignments\` for "who supplies X and where", \`check_stock\` for "do we have any X / where is it", and \`get_project_coverage\` for "what do we still need to buy".
 - Money values come pre-formatted in \`*_display\` fields — use those.
 - When you reference a node, give its path (e.g. "Tower 2 › Superstructure › …").
 - If a project/node isn't found, say so plainly.${actionRules}
@@ -92,7 +93,7 @@ export async function runAgent(opts: {
   signal?: AbortSignal;
 }) {
   if (!client) {
-    opts.onEvent({ type: "error", message: "The assistant is not configured — set ANTHROPIC_API_KEY on the API." });
+    opts.onEvent({ type: "error", message: notConfiguredMessage });
     return;
   }
 
@@ -114,8 +115,7 @@ export async function runAgent(opts: {
           model: MODEL,
           max_tokens: 8000,
           system: systemPrompt(opts.language, operate),
-          thinking: { type: "adaptive" },
-          output_config: { effort: EFFORT },
+          ...reasoningParams,
           tools: toolDefs,
           messages,
         },

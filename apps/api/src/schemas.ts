@@ -184,3 +184,64 @@ export const bulkAssignSupplier = z.object({
   supplierId: z.string().min(1).nullable(), // null = clear the assignment
   nodeId: z.string().nullish(), // limit to this node's subtree; omit for the whole project
 });
+
+// ---- inventory: warehouses, stock and the movement ledger ----
+export const warehouseCreate = z.object({
+  code: z.string().min(1).max(40),
+  name: z.string().min(1).max(200),
+  location: z.string().max(200).nullish(),
+  address: z.string().max(500).nullish(),
+  notes: z.string().max(2000).nullish(),
+  isActive: z.boolean().default(true),
+});
+export const warehouseUpdate = warehouseCreate.partial();
+
+export const stockItemUpsert = z.object({
+  warehouseId: z.string().min(1),
+  materialId: z.string().min(1),
+  onHand: z.number().default(0),
+  minLevel: z.number().nonnegative().default(0),
+  binLocation: z.string().max(100).nullish(),
+  unitCost: z.number().nonnegative().optional(),
+});
+
+export const stockItemUpdate = z.object({
+  minLevel: z.number().nonnegative().optional(),
+  binLocation: z.string().max(100).nullish(),
+  unitCost: z.number().nonnegative().optional(),
+});
+
+export const stockMovementCreate = z.object({
+  warehouseId: z.string().min(1),
+  materialId: z.string().min(1),
+  type: z.enum(["RECEIPT", "ISSUE", "ADJUSTMENT", "TRANSFER_IN", "TRANSFER_OUT"]),
+  // RECEIPT/ISSUE/TRANSFER_* are positive magnitudes; ADJUSTMENT may be negative
+  quantity: z.number().refine((n) => n !== 0, "quantity cannot be zero"),
+  unitCost: z.number().nonnegative().optional(),
+  projectId: z.string().nullish(),
+  nodeId: z.string().nullish(),
+  reference: z.string().max(200).nullish(),
+  note: z.string().max(2000).nullish(),
+});
+
+export const stockTransfer = z.object({
+  fromWarehouseId: z.string().min(1),
+  toWarehouseId: z.string().min(1),
+  materialId: z.string().min(1),
+  quantity: z.number().positive(),
+  reference: z.string().max(200).nullish(),
+  note: z.string().max(2000).nullish(),
+});
+
+export const reservationCreate = z.object({
+  stockItemId: z.string().min(1),
+  projectId: z.string().min(1),
+  nodeId: z.string().nullish(),
+  quantity: z.number().positive(),
+  note: z.string().max(2000).nullish(),
+});
+
+export const reservationUpdate = z.object({
+  quantity: z.number().positive().optional(),
+  note: z.string().max(2000).nullish(),
+});

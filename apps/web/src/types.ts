@@ -283,3 +283,103 @@ export interface SupplierAssignments {
     materials: { code: string; name: string; uom: string; extendedQty: number; lineCount: number }[];
   }[];
 }
+
+/* ---------- inventory ---------- */
+export interface Warehouse {
+  id: string;
+  code: string;
+  name: string;
+  location?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  isActive: boolean;
+  stockValue?: number;
+  _count?: { stockItems: number; movements: number };
+}
+
+export interface StockItem {
+  id: string;
+  warehouseId: string;
+  materialId: string;
+  onHand: number;
+  reserved: number;
+  available: number;
+  minLevel: number;
+  binLocation: string | null;
+  uom: string;
+  unitCost: number;
+  value: number;
+  low: boolean;
+  material: { id: string; code: string; name: string; uom: string; unitCost: number };
+  warehouse: { id: string; code: string; name: string };
+}
+
+export type StockMovementType = "RECEIPT" | "ISSUE" | "ADJUSTMENT" | "TRANSFER_IN" | "TRANSFER_OUT";
+
+export interface StockMovement {
+  id: string;
+  type: StockMovementType;
+  quantity: number;
+  uom: string;
+  unitCost: number;
+  reference: string | null;
+  note: string | null;
+  createdAt: string;
+  material: { code: string; name: string; uom: string };
+  warehouse: { code: string; name: string };
+  project: { code: string; name: string } | null;
+  node: { name: string } | null;
+}
+
+export interface StockReservation {
+  id: string;
+  quantity: number;
+  note: string | null;
+  createdAt: string;
+  stockItem: { id: string; material: { code: string; name: string; uom: string } };
+  warehouse: { code: string; name: string };
+  project: { code: string; name: string };
+  node: { name: string } | null;
+}
+
+export interface AvailabilityRow {
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  uom: string;
+  required: number;
+  net: number;
+  wastage: number;
+  onHand: number;
+  available: number;
+  reservedForProject: number;
+  reservedElsewhere: number;
+  shortfall: number;
+  shortfallValue: number;
+  unitCost: number;
+  status: "covered" | "partial" | "none";
+  locations: {
+    warehouseId: string;
+    code: string;
+    name: string;
+    onHand: number;
+    available: number;
+    binLocation: string | null;
+  }[];
+}
+
+export interface ProjectAvailability {
+  project: { id: string; code: string; name: string; currency: string };
+  rows: AvailabilityRow[];
+  unlinked: { description: string; quantity: number; uom: string }[];
+  totals: {
+    materials: number;
+    covered: number;
+    partial: number;
+    none: number;
+    requiredValue: number;
+    shortfallValue: number;
+    coveredValue: number;
+    unlinkedLines: number;
+  };
+}

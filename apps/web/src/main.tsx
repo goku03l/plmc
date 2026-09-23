@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
+import LandingPage from "./pages/LandingPage";
 import ProjectsPage from "./pages/ProjectsPage";
 import ProjectPage from "./pages/ProjectPage";
 import MaterialsPage from "./pages/MaterialsPage";
@@ -12,6 +13,7 @@ import RfqsPage from "./pages/RfqsPage";
 import RfqDetailPage from "./pages/RfqDetailPage";
 import PortalPage from "./pages/PortalPage";
 import AssistantPage from "./pages/AssistantPage";
+import InventoryPage from "./pages/InventoryPage";
 import "./styles.css";
 
 const queryClient = new QueryClient({
@@ -19,17 +21,18 @@ const queryClient = new QueryClient({
 });
 
 const router = createBrowserRouter([
+  { path: "/", element: <LandingPage /> },
   {
-    path: "/",
     element: <App />,
     children: [
-      { index: true, element: <ProjectsPage /> },
+      { path: "projects", element: <ProjectsPage /> },
       { path: "projects/:projectId", element: <ProjectPage /> },
       { path: "projects/:projectId/procurement", element: <ProcurementPage /> },
       { path: "materials", element: <MaterialsPage /> },
       { path: "suppliers", element: <SuppliersPage /> },
       { path: "rfqs", element: <RfqsPage /> },
       { path: "rfqs/:rfqId", element: <RfqDetailPage /> },
+      { path: "inventory", element: <InventoryPage /> },
       { path: "assistant", element: <AssistantPage /> },
     ],
   },

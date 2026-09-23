@@ -3,6 +3,7 @@ import { categoryBreakdown, computeCosts, COST_KINDS, KIND_LABEL } from "../cost
 import { buildTree, loadProjectNodes } from "../routes/tree-util.js";
 import { str, projectByRef, nodePath, subtreeIds, inr, type AgentTool, type FlatNode } from "./helpers.js";
 import { MUTATING_TOOLS } from "./mutations.js";
+import { INVENTORY_READ_TOOLS, INVENTORY_MUTATING_TOOLS } from "./inventory-tools.js";
 
 /**
  * Read-only tool surface for the assistant. Every tool here only reads data.
@@ -518,6 +519,8 @@ const READ_TOOLS: AgentTool[] = [
   },
 ];
 
-export const AGENT_TOOLS: AgentTool[] = [...READ_TOOLS, ...MUTATING_TOOLS];
-export const READONLY_TOOLS = READ_TOOLS;
+const ALL_READ_TOOLS: AgentTool[] = [...READ_TOOLS, ...INVENTORY_READ_TOOLS];
+
+export const AGENT_TOOLS: AgentTool[] = [...ALL_READ_TOOLS, ...MUTATING_TOOLS, ...INVENTORY_MUTATING_TOOLS];
+export const READONLY_TOOLS = ALL_READ_TOOLS;
 export const ALL_TOOLS = AGENT_TOOLS;

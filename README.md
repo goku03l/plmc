@@ -1,4 +1,4 @@
-# PLMC — PLM / BOM for Construction
+# Summer — PLM / BOM for Construction
 
 Manage a construction project as a **DMU-style product structure** (a configurable
 tree of groups → sub-groups → assemblies → components) with a **Bill of Materials
@@ -26,7 +26,7 @@ Project
 ## Layout
 
 ```
-plmc/
+summer/
 ├─ docker-compose.yml        Postgres on host port 5433
 ├─ apps/
 │  ├─ api/                   Fastify + Prisma service
@@ -54,7 +54,7 @@ cp .env.example apps/api/.env         # Windows: copy .env.example apps\api\.env
 #    then edit apps/api/.env -> set DATABASE_URL (password / host)
 
 # 3a. using a local Postgres:
-psql -U postgres -c "CREATE DATABASE plmc;"
+psql -U postgres -c "CREATE DATABASE summer;"
 npm run db:migrate
 npm run db:seed
 
@@ -218,13 +218,40 @@ rolledCost   = nodeQuantity × (directCost + Σ child.rolledCost)
 Project total = Σ rolledCost of the top-level nodes. The cost breakdown attributes
 each node's extended direct cost to its nearest sub-group (self or ancestor).
 
-## Cloud deployment (outline)
+## Cloud deployment (Voroa)
 
-- **DB**: managed Postgres (RDS / Cloud SQL / Neon / Supabase).
-- **API**: container image (`apps/api`) on ECS Fargate / Cloud Run / Fly.io;
-  `DATABASE_URL` + `CORS_ORIGIN` as secrets; run `prisma migrate deploy` on release.
-- **Web**: `npm run build --workspace @plmc/web` → static host (CloudFront / Netlify)
-  with `VITE_API_URL` pointing at the API, or serve behind the same domain at `/api`.
+Deployed as two Voroa web services from this repo, plus a managed Voroa Postgres.
+Voroa's monorepo support only covers per-service **root directory** selection today
+(no cross-service build caching) — that's enough here since neither `apps/api` nor
+`apps/web` depends on the other at install time.
+
+1. **Database** — create a Voroa Postgres instance, copy its connection string.
+2. **API service** — new web service from this repo:
+   - Root directory: `/apps/api`
+   - Build / start commands: leave default (`npm install && npm run build` /
+     `npm start` — `build` runs `prisma generate`, `start` runs
+     `prisma migrate deploy` then boots the server via `tsx`).
+   - Env vars: `DATABASE_URL` (from step 1), `CORS_ORIGIN` = the web service's
+     URL (set after step 3, then redeploy), `APP_BASE_URL` = same value,
+     `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY`, `GOOGLE_TTS_API_KEY`, SMTP vars —
+     see `.env.example`. `PORT` is provided by Voroa automatically.
+   - Health check path: `/api/health`.
+3. **Web service** — second web service from the same repo:
+   - Root directory: `/apps/web`
+   - Build / start commands: leave default (`npm install && npm run build` /
+     `npm start` — `start` serves the built `dist/` via `serve -l $PORT`).
+   - Env var: `VITE_API_URL` = the API service's URL (from step 2). This is
+     read at **build time**, so set it before the first build, or trigger a
+     rebuild after changing it.
+4. Redeploy the API service once the web URL is known, so `CORS_ORIGIN` /
+   `APP_BASE_URL` are correct.
+
+**Known limitation:** Voroa has no persistent disks today — a service's
+filesystem is wiped on every redeploy. Node/RFQ file attachments
+(`UPLOAD_DIR`, see `apps/api/src/storage.ts`) are stored on local disk, so
+uploaded files will not survive a redeploy until that moves to an external
+object store. Fine for a demo; needs fixing before real attachment data is
+trusted to it.
 
 See `DESIGN.md` for the full architecture, the roadmap (auth/multi-tenancy,
 versioning & baselines, IFC/glTF 3D viewer, revisions, procurement), and the
