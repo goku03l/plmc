@@ -21,7 +21,8 @@ function getTransport(): Transporter {
 export type SentMail = { messageId?: string; delivered: boolean; preview?: unknown };
 
 export async function sendMail(opts: {
-  to: string;
+  to: string | string[];
+  cc?: string[];
   subject: string;
   text: string;
   html?: string;
@@ -29,7 +30,7 @@ export async function sendMail(opts: {
   const info = await getTransport().sendMail({ from: env.mail.from, ...opts });
   if (!mailEnabled) {
     // JSON transport: `info.message` is the raw message; log it so a dev can see it
-    console.log(`\n[mail:not-sent] to=${opts.to} subject="${opts.subject}"\n${String(info.message ?? "")}\n`);
+    console.log(`\n[mail:not-sent] to=${[opts.to].flat().join(",")}${opts.cc?.length ? ` cc=${opts.cc.join(",")}` : ""} subject="${opts.subject}"\n${String(info.message ?? "")}\n`);
     return { delivered: false, preview: info.message };
   }
   return { delivered: true, messageId: info.messageId };

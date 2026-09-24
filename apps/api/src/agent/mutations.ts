@@ -1399,7 +1399,7 @@ export const MUTATING_TOOLS: AgentTool[] = [
     def: {
       name: "send_email",
       description:
-        "Send a free-form email that you compose (not an RFQ invitation) — e.g. chase a delivery, ask a supplier a question, follow up on a quote. Recipients can be raw email addresses and/or supplier names/ids (a supplier resolves to its primary contact). Each recipient gets their own individual email. Sends a real email — irreversible, cannot be unsent.",
+        "Send a free-form email that you compose (not an RFQ invitation) — e.g. chase a delivery, ask a supplier a question, follow up on a quote. Recipients can be raw email addresses and/or supplier names/ids (a supplier resolves to its primary contact). Without `cc`, each recipient gets their own individual email. With `cc`, ONE shared email goes out with everyone in to on the To line and the cc people on the Cc line (all visible to each other). Sends a real email — irreversible, cannot be unsent.",
       input_schema: {
         type: "object",
         properties: {
@@ -1407,6 +1407,11 @@ export const MUTATING_TOOLS: AgentTool[] = [
             type: "array",
             items: { type: "string" },
             description: "recipients: email addresses and/or supplier names/ids (max 20)",
+          },
+          cc: {
+            type: "array",
+            items: { type: "string" },
+            description: "optional CC recipients (addresses and/or supplier names/ids); using this sends one shared email instead of individual ones",
           },
           subject: { type: "string" },
           body: { type: "string", description: "the full plain-text email body, greeting and sign-off included; blank lines separate paragraphs" },
@@ -1420,30 +1425,41 @@ export const MUTATING_TOOLS: AgentTool[] = [
       const refs = (Array.isArray(input.to) ? input.to : []).filter((s: unknown): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim());
       const subject = str(input.subject)?.replace(/[\r\n]+/g, " ").trim();
       const body = str(input.body)?.trim();
+      const ccRefs = (Array.isArray(input.cc) ? input.cc : []).filter((s: unknown): s is string => typeof s === "string" && s.trim() !== "").map((s) => s.trim());
       if (!refs.length) return { error: "No recipients given" };
-      if (refs.length > 20) return { error: "Too many recipients — 20 at most per email" };
+      if (refs.length + ccRefs.length > 20) return { error: "Too many recipients — 20 at most per email" };
       if (!subject) return { error: "Subject is required" };
       if (!body) return { error: "Body is required" };
 
       const emailRe = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
-      const targets: { label: string; email: string }[] = [];
-      for (const ref of refs) {
-        if (ref.includes("@")) {
-          if (!emailRe.test(ref)) return { error: `"${ref}" is not a valid email address` };
-          targets.push({ label: ref, email: ref });
-          continue;
+      const resolve = async (list: string[]): Promise<{ label: string; email: string }[] | { error: string }> => {
+        const out: { label: string; email: string }[] = [];
+        for (const ref of list) {
+          if (ref.includes("@")) {
+            if (!emailRe.test(ref)) return { error: `"${ref}" is not a valid email address` };
+            out.push({ label: ref, email: ref });
+            continue;
+          }
+          const supplier = await supplierByRef(ref);
+          if (!supplier) return { error: `No supplier or email address matches "${ref}"` };
+          const contact = await prisma.supplierContact.findFirst({ where: { supplierId: supplier.id }, orderBy: [{ isPrimary: "desc" }] });
+          const email = contact?.email || supplier.email;
+          if (!email) return { error: `${supplier.name} has no email address on file — give an address instead` };
+          out.push({ label: `${supplier.name} <${email}>`, email });
         }
-        const supplier = await supplierByRef(ref);
-        if (!supplier) return { error: `No supplier or email address matches "${ref}"` };
-        const contact = await prisma.supplierContact.findFirst({ where: { supplierId: supplier.id }, orderBy: [{ isPrimary: "desc" }] });
-        const email = contact?.email || supplier.email;
-        if (!email) return { error: `${supplier.name} has no email address on file — give an address instead` };
-        targets.push({ label: `${supplier.name} <${email}>`, email });
-      }
-      const unique = [...new Map(targets.map((t) => [t.email.toLowerCase(), t])).values()];
+        return [...new Map(out.map((t) => [t.email.toLowerCase(), t])).values()];
+      };
+      const toRes = await resolve(refs);
+      if ("error" in toRes) return toRes;
+      const ccRes = await resolve(ccRefs);
+      if ("error" in ccRes) return ccRes;
+      const unique = toRes;
+      const toSet = new Set(unique.map((t) => t.email.toLowerCase()));
+      const ccList = ccRes.filter((t) => !toSet.has(t.email.toLowerCase()));
 
       const via = mailEnabled ? "real email" : "a LOGGED email — no SMTP is configured on this server, so nothing actually leaves it";
-      const summary = `Email "${subject}" to ${unique.map((t) => t.label).join(", ")} via ${via}. This cannot be unsent.\n\n${body}`;
+      const ccNote = ccList.length ? ` (one shared email, cc ${ccList.map((t) => t.label).join(", ")})` : "";
+      const summary = `Email "${subject}" to ${unique.map((t) => t.label).join(", ")}${ccNote} via ${via}. This cannot be unsent.\n\n${body}`;
       if (!bool(input.confirm)) return pending("send_email", summary, { key: input.__confirmKey, destructive: true });
 
       const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -1452,6 +1468,16 @@ export const MUTATING_TOOLS: AgentTool[] = [
         .map((p) => `<p>${esc(p).replace(/\n/g, "<br>")}</p>`)
         .join("");
       const results: { to: string; delivered: boolean; error?: string }[] = [];
+      if (ccList.length) {
+        const to = unique.map((t) => t.email);
+        try {
+          const sent = await sendMail({ to, cc: ccList.map((t) => t.email), subject, text: body, html });
+          results.push({ to: [...to, ...ccList.map((t) => t.email)].join(", "), delivered: sent.delivered });
+        } catch (e) {
+          results.push({ to: to.join(", "), delivered: false, error: (e as Error).message });
+        }
+        return done("send_email", `Emailed "${subject}" to ${to.length} recipient(s), cc ${ccList.length}`, { key: input.__confirmKey, mailEnabled, results });
+      }
       for (const t of unique) {
         try {
           const sent = await sendMail({ to: t.email, subject, text: body, html });
