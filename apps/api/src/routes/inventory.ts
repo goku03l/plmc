@@ -13,7 +13,7 @@ import {
   reservationUpdate,
 } from "../schemas.js";
 import { loadProjectNodes } from "./tree-util.js";
-import { materialDemand, availability, movementSign, type StockRow } from "../inventory.js";
+import { materialDemand, availability, buildable, scaleDemand, movementSign, type StockRow } from "../inventory.js";
 
 type Tx = Prisma.TransactionClient;
 
@@ -410,7 +410,9 @@ export async function inventoryRoutes(app: FastifyInstance) {
   // ---- the point of all this: what does this project still have to buy? -----
   app.get("/projects/:id/availability", async (req) => {
     const { id } = req.params as { id: string };
-    const { warehouseId } = req.query as { warehouseId?: string };
+    const { warehouseId, units: unitsRaw } = req.query as { warehouseId?: string; units?: string };
+    // build target: scale the BOM to N complete units (default 1 = a single unit)
+    const units = Math.min(1_000_000, Math.max(1, Math.floor(Number(unitsRaw) || 1)));
 
     const project = await prisma.project.findUnique({ where: { id } });
     if (!project) throw notFound("Project");
@@ -443,7 +445,10 @@ export async function inventoryRoutes(app: FastifyInstance) {
     const matMap = new Map(
       materials.map((m) => [m.id, { code: m.code, name: m.name, uom: m.uom, unitCost: m.unitCost }]),
     );
-    const rows = availability(demand, stock, matMap);
+    const perUnitRows = availability(demand, stock, matMap);
+    // "how many can we build from what's in stock" always uses the per-unit BOM
+    const canBuild = buildable(perUnitRows);
+    const rows = units === 1 ? perUnitRows : availability(scaleDemand(demand, units), stock, matMap);
 
     const totals = rows.reduce(
       (t, r) => {
@@ -459,6 +464,8 @@ export async function inventoryRoutes(app: FastifyInstance) {
 
     return {
       project: { id: project.id, code: project.code, name: project.name, currency: project.currency },
+      units,
+      buildable: canBuild,
       rows,
       // MATERIAL lines with no catalog link can't be netted against stock — report
       // them rather than letting the coverage figure look better than it is.

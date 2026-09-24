@@ -230,3 +230,59 @@ export function movementSign(type: string): number {
       return 1; // ADJUSTMENT carries its own sign in `quantity`
   }
 }
+
+/** The same demand for `units` complete builds (every quantity scales linearly). */
+export function scaleDemand(demand: DemandResult, units: number): DemandResult {
+  if (units === 1) return demand;
+  const byMaterial = new Map<string, MaterialDemand>();
+  for (const [id, d] of demand.byMaterial) {
+    byMaterial.set(id, { ...d, net: d.net * units, wastage: d.wastage * units, required: d.required * units });
+  }
+  return { byMaterial, unlinked: demand.unlinked.map((u) => ({ ...u, quantity: u.quantity * units })) };
+}
+
+export type Buildable = {
+  /** how many complete units the stock can build right now (whole units) */
+  units: number;
+  /** the parts that cap it — fewest units first */
+  limiting: Array<{
+    materialId: string;
+    materialCode: string;
+    materialName: string;
+    uom: string;
+    perUnit: number;
+    available: number;
+    /** whole units this one part can supply */
+    units: number;
+  }>;
+  /** parts with nothing usable in stock at all (build count is 0 while any exist) */
+  missing: number;
+};
+
+/**
+ * "How many of these can we build?" — for every material the BOM needs, whole
+ * units the available stock supplies = floor(available / required-per-unit); the
+ * build count is the minimum across all of them, and the parts sitting at that
+ * minimum are the bottleneck. `perUnitRows` must be availability() for ONE unit.
+ */
+export function buildable(perUnitRows: AvailabilityRow[], limitingCount = 8): Buildable {
+  const scored = perUnitRows
+    .filter((r) => r.required > 0)
+    // tiny epsilon so 97.0000000001 style float noise doesn't lose a whole unit
+    .map((r) => ({ r, units: Math.floor(r.available / r.required + 1e-9) }))
+    .sort((a, b) => a.units - b.units || a.r.materialCode.localeCompare(b.r.materialCode));
+  if (!scored.length) return { units: 0, limiting: [], missing: 0 };
+  return {
+    units: scored[0]!.units,
+    limiting: scored.slice(0, limitingCount).map(({ r, units }) => ({
+      materialId: r.materialId,
+      materialCode: r.materialCode,
+      materialName: r.materialName,
+      uom: r.uom,
+      perUnit: r.required,
+      available: r.available,
+      units,
+    })),
+    missing: scored.filter((s) => s.units === 0).length,
+  };
+}

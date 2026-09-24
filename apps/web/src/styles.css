@@ -1411,3 +1411,12 @@ label select {
     align-items: stretch;
   }
 }
+
+/* inventory: how many complete units can the stock build */
+.build-card { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; margin-bottom: 14px; }
+.build-head { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+.build-big { font-size: 34px; font-weight: 700; line-height: 1.15; }
+.build-unit { font-size: 15px; font-weight: 500; color: var(--muted, #6b7280); }
+.build-target { display: flex; flex-direction: column; gap: 6px; }
+.build-target-row { display: flex; gap: 8px; align-items: center; }
+.build-limits { margin: 0; }

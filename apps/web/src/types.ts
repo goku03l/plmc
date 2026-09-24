@@ -368,8 +368,31 @@ export interface AvailabilityRow {
   }[];
 }
 
+export interface BuildableLimit {
+  materialId: string;
+  materialCode: string;
+  materialName: string;
+  uom: string;
+  perUnit: number;
+  available: number;
+  /** whole units this one part can supply */
+  units: number;
+}
+
+export interface Buildable {
+  /** complete units the stock can build right now */
+  units: number;
+  /** bottleneck parts, fewest units first */
+  limiting: BuildableLimit[];
+  /** parts with nothing usable in stock */
+  missing: number;
+}
+
 export interface ProjectAvailability {
   project: { id: string; code: string; name: string; currency: string };
+  /** build target the rows are netted for (1 = a single unit) */
+  units: number;
+  buildable: Buildable;
   rows: AvailabilityRow[];
   unlinked: { description: string; quantity: number; uom: string }[];
   totals: {

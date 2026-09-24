@@ -1,6 +1,6 @@
 import { prisma } from "../db.js";
 import { loadProjectNodes } from "../routes/tree-util.js";
-import { materialDemand, availability, movementSign, type StockRow } from "../inventory.js";
+import { materialDemand, availability, buildable, scaleDemand, movementSign, type StockRow } from "../inventory.js";
 import { str, projectByRef, inr, type AgentTool } from "./helpers.js";
 
 /**
@@ -139,7 +139,7 @@ const READ_INVENTORY_TOOLS: AgentTool[] = [
     def: {
       name: "get_project_coverage",
       description:
-        "For a project: what its BOM requires, how much is already available in the warehouses, and what still has to be bought. Use this for 'what do we still need to buy', 'how much of the project is covered by stock', 'can we build X with what we have'. Quantities include wastage; availability excludes stock reserved for other projects.",
+        "For a project: what its BOM requires, how much is already available in the warehouses, and what still has to be bought. Use this for 'what do we still need to buy', 'how much of the project is covered by stock', 'can we build X with what we have', 'how many can we build / manufacture'. Also returns buildableUnits — how many COMPLETE units (e.g. vehicles) the stock can build right now — and the limiting parts. Pass `units` to net a build target (e.g. 97) instead of one unit. Quantities include wastage; availability excludes stock reserved for other projects.",
       input_schema: {
         type: "object",
         properties: {
@@ -147,6 +147,7 @@ const READ_INVENTORY_TOOLS: AgentTool[] = [
           warehouse: { type: "string", description: "optional: only count stock in this warehouse" },
           onlyShort: { type: "boolean", description: "only return materials that are short (default true)" },
           limit: { type: "number", description: "max rows to return, default 25" },
+          units: { type: "number", description: "build target: how many complete units to net demand for (default 1)" },
         },
         required: ["project"],
         additionalProperties: false,
@@ -186,7 +187,10 @@ const READ_INVENTORY_TOOLS: AgentTool[] = [
       const matMap = new Map(
         materials.map((m) => [m.id, { code: m.code, name: m.name, uom: m.uom, unitCost: m.unitCost }]),
       );
-      const all = availability(demand, stock, matMap);
+      const perUnit = availability(demand, stock, matMap);
+      const canBuild = buildable(perUnit);
+      const units = Math.max(1, Math.floor(num(input.units) ?? 1));
+      const all = units === 1 ? perUnit : availability(scaleDemand(demand, units), stock, matMap);
       const onlyShort = input.onlyShort !== false;
       const rows = (onlyShort ? all.filter((r) => r.shortfall > 0) : all).slice(0, num(input.limit) ?? 25);
 
@@ -196,6 +200,17 @@ const READ_INVENTORY_TOOLS: AgentTool[] = [
       return {
         project: { code: project.code, name: project.name },
         warehouse: warehouse ? `${warehouse.code} — ${warehouse.name}` : "all warehouses",
+        buildTarget: units,
+        buildableUnits: canBuild.units,
+        buildableNote:
+          "Whole complete units the available stock can build right now, i.e. the minimum over every part of floor(available / per-unit requirement). Purchased-but-unlinked lines and labour/plant costs are not counted.",
+        limitingParts: canBuild.limiting.slice(0, 5).map((l) => ({
+          code: l.materialCode,
+          name: l.materialName,
+          perUnit: qty(l.perUnit),
+          available: qty(l.available),
+          unitsItSupports: l.units,
+        })),
         materialsRequired: all.length,
         fullyCovered: all.filter((r) => r.status === "covered").length,
         partlyCovered: all.filter((r) => r.status === "partial").length,

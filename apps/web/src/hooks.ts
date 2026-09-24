@@ -471,12 +471,16 @@ export function useReservationMutations() {
   };
 }
 
-export const useProjectAvailability = (projectId: string, warehouseId?: string) =>
+export const useProjectAvailability = (projectId: string, warehouseId?: string, units = 1) =>
   useQuery({
-    queryKey: ["availability", projectId, warehouseId ?? ""],
-    queryFn: () =>
-      api.get<ProjectAvailability>(
-        `/projects/${projectId}/availability${warehouseId ? `?warehouseId=${warehouseId}` : ""}`,
-      ),
+    queryKey: ["availability", projectId, warehouseId ?? "", units],
+    queryFn: () => {
+      const q = new URLSearchParams();
+      if (warehouseId) q.set("warehouseId", warehouseId);
+      if (units > 1) q.set("units", String(units));
+      const qs = q.toString();
+      return api.get<ProjectAvailability>(`/projects/${projectId}/availability${qs ? `?${qs}` : ""}`);
+    },
+    placeholderData: (prev) => prev,
     enabled: !!projectId,
   });

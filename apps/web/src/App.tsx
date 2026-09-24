@@ -6,7 +6,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark">▚</span> Summer
-          <span className="brand-sub">Construction PLM / BOM</span>
+          <span className="brand-sub">Your project assistant</span>
         </div>
         <nav>
           <NavLink to="/projects" end>

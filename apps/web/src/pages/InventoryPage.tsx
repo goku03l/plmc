@@ -12,7 +12,7 @@ import {
   useProjects,
 } from "../hooks";
 import { money, num } from "../format";
-import type { AvailabilityRow, StockItem, StockMovementType } from "../types";
+import type { AvailabilityRow, Buildable, StockItem, StockMovementType } from "../types";
 
 type Tab = "coverage" | "stock" | "warehouses" | "movements";
 
@@ -66,7 +66,8 @@ function CoverageTab({ warehouseId }: { warehouseId: string }) {
   const { data: projects } = useProjects();
   const [projectId, setProjectId] = useState("");
   const active = projectId || projects?.[0]?.id || "";
-  const { data, isLoading } = useProjectAvailability(active, warehouseId || undefined);
+  const [target, setTarget] = useState(1);
+  const { data, isLoading } = useProjectAvailability(active, warehouseId || undefined, target);
   const [onlyShort, setOnlyShort] = useState(false);
 
   const rows = useMemo(
@@ -95,12 +96,23 @@ function CoverageTab({ warehouseId }: { warehouseId: string }) {
 
       {data && (
         <>
+          <BuildableCard
+            buildable={data.buildable}
+            projectName={data.project.name}
+            target={target}
+            onTarget={setTarget}
+          />
+
           <div className="summary-totals">
             <Stat label="Materials required" value={String(data.totals.materials)} />
             <Stat label="Fully covered by stock" value={`${data.totals.covered}`} tone="ok" />
             <Stat label="Partly covered" value={`${data.totals.partial}`} tone="warn" />
             <Stat label="Nothing in stock" value={`${data.totals.none}`} tone="bad" />
-            <Stat label="Still to buy" value={money(data.totals.shortfallValue, currency)} big />
+            <Stat
+              label={target > 1 ? `Still to buy for ${num(target)} units` : "Still to buy"}
+              value={money(data.totals.shortfallValue, currency)}
+              big
+            />
           </div>
 
           {data.totals.requiredValue > 0 && (
@@ -151,6 +163,113 @@ function CoverageTab({ warehouseId }: { warehouseId: string }) {
         </>
       )}
     </>
+  );
+}
+
+/** "How many complete units can the stock build?" — with a build-target box that
+ *  re-nets the whole table for N units, so the shortfall answers "what do I buy to make N?". */
+function BuildableCard({
+  buildable,
+  projectName,
+  target,
+  onTarget,
+}: {
+  buildable: Buildable;
+  projectName: string;
+  target: number;
+  onTarget: (n: number) => void;
+}) {
+  const [draft, setDraft] = useState(String(target));
+  const can = buildable.units;
+  const reached = can >= target;
+  const apply = () => {
+    const n = Math.max(1, Math.floor(Number(draft) || 1));
+    setDraft(String(n));
+    onTarget(n);
+  };
+  return (
+    <div className="card build-card">
+      <div className="build-head">
+        <div>
+          <div className="muted small">Can be built from stock right now</div>
+          <div className="build-big">
+            {num(can)} <span className="build-unit">complete {projectName}{can === 1 ? "" : "s"}</span>
+          </div>
+          <p className="muted small">
+            {can === 0
+              ? `Not one complete unit — ${buildable.missing} part${buildable.missing === 1 ? " has" : "s have"} nothing usable in stock.`
+              : `Set by the scarcest part: every unit needs its full BOM, so the count is the lowest across all parts.`}
+          </p>
+        </div>
+        <form
+          className="build-target"
+          onSubmit={(e) => {
+            e.preventDefault();
+            apply();
+          }}
+        >
+          <label className="muted small">Build target (units)</label>
+          <div className="build-target-row">
+            <input
+              type="number"
+              min={1}
+              step={1}
+              className="w-qty"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={apply}
+            />
+            <button className="btn sm" type="submit">
+              Check
+            </button>
+            {target > 1 && (
+              <button
+                className="btn sm"
+                type="button"
+                onClick={() => {
+                  setDraft("1");
+                  onTarget(1);
+                }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          {target > 1 && (
+            <span className={`pill ${reached ? "status-covered" : "status-partial"}`} style={{ alignSelf: "flex-start" }}>
+              {reached ? `${num(target)} units are fully covered` : `short for ${num(target)} — table shows what to buy`}
+            </span>
+          )}
+        </form>
+      </div>
+
+      {buildable.limiting.length > 0 && (
+        <table className="data-table build-limits">
+          <thead>
+            <tr>
+              <th>Limiting parts (first to run out)</th>
+              <th className="r">Per unit</th>
+              <th className="r">Available</th>
+              <th className="r">Units it supports</th>
+            </tr>
+          </thead>
+          <tbody>
+            {buildable.limiting.slice(0, 6).map((l) => (
+              <tr key={l.materialId} className={l.units < target ? "row-warn" : undefined}>
+                <td>
+                  <span className="mono xs">{l.materialCode}</span> {l.materialName}
+                </td>
+                <td className="r cell-num">
+                  {num(l.perUnit)} <span className="muted xs">{l.uom}</span>
+                </td>
+                <td className="r cell-num">{num(l.available)}</td>
+                <td className="r cell-num strong">{num(l.units)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 

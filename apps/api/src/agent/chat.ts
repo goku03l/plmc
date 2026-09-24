@@ -85,6 +85,47 @@ function wasProposed(history: Anthropic.MessageParam[], key: string): boolean {
   return false;
 }
 
+/** Heal a history where an assistant turn has tool_use blocks with no matching
+ *  tool_result right after it (an older run that was cut off, or a stored
+ *  conversation from before that was fixed). Missing results are filled in with an
+ *  "interrupted" error so the model can carry on instead of every request 400ing. */
+function repairHistory(history: Anthropic.MessageParam[]): Anthropic.MessageParam[] {
+  const out: Anthropic.MessageParam[] = [];
+  for (let i = 0; i < history.length; i++) {
+    const m = history[i]!;
+    out.push(m);
+    if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
+    const ids = (m.content as Array<{ type?: string; id?: string }>)
+      .filter((b) => b?.type === "tool_use" && b.id)
+      .map((b) => b.id!);
+    if (!ids.length) continue;
+
+    const next = history[i + 1];
+    const nextBlocks: Anthropic.ContentBlockParam[] =
+      next?.role === "user" && Array.isArray(next.content) ? (next.content as Anthropic.ContentBlockParam[]) : [];
+    const have = new Set(
+      nextBlocks.filter((b) => b.type === "tool_result").map((b) => (b as Anthropic.ToolResultBlockParam).tool_use_id),
+    );
+    const missing = ids.filter((id) => !have.has(id));
+    if (!missing.length) continue;
+
+    const fill: Anthropic.ToolResultBlockParam[] = missing.map((id) => ({
+      type: "tool_result",
+      tool_use_id: id,
+      content: "error: this call was interrupted before it ran — no result available.",
+      is_error: true,
+    }));
+    if (next?.role === "user" && Array.isArray(next.content)) {
+      // tool_results must lead the user message
+      out.push({ role: "user", content: [...fill, ...nextBlocks] });
+      i++;
+    } else {
+      out.push({ role: "user", content: fill });
+    }
+  }
+  return out;
+}
+
 export async function runAgent(opts: {
   messages: Anthropic.MessageParam[];
   language: string;
@@ -104,8 +145,8 @@ export async function runAgent(opts: {
   // Snapshot of the history the client sent, BEFORE this run appends anything —
   // this is what wasProposed() checks against, so a proposal only counts once
   // the user has actually seen it and replied (i.e. it came from a past request).
-  const priorHistory = opts.messages;
-  let messages = [...opts.messages];
+  const priorHistory = repairHistory(opts.messages);
+  let messages = [...priorHistory];
   const appended: Anthropic.MessageParam[] = [];
 
   try {
@@ -128,9 +169,11 @@ export async function runAgent(opts: {
       messages.push({ role: "assistant", content: msg.content });
       appended.push({ role: "assistant", content: msg.content });
 
-      if (msg.stop_reason !== "tool_use") break;
-
+      // Key off the blocks, not stop_reason: a reply cut off by max_tokens (e.g. a huge
+      // batch of parallel calls) still carries tool_use blocks, and every one needs a
+      // tool_result or the API rejects the whole conversation from then on.
       const toolUses = msg.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+      if (toolUses.length === 0) break;
       const results: Anthropic.ToolResultBlockParam[] = [];
       for (const tu of toolUses) {
         opts.onEvent({ type: "tool_start", id: tu.id, name: tu.name, input: tu.input });
