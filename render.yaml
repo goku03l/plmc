@@ -61,7 +61,6 @@ services:
   - type: web
     name: summer-web
     runtime: static
-    region: singapore
     buildCommand: npm ci && npm run build --workspace @summer/web
     staticPublishPath: apps/web/dist
     envVars:
