@@ -6,6 +6,9 @@ import {
   isToolResultTurn,
   LANGS,
   listMics,
+  listSpeakers,
+  setSpeaker,
+  speakerSelectSupported,
   speechSupported,
   stopSpeaking,
   streamChat,
@@ -117,6 +120,8 @@ export default function AssistantPage() {
   const [mics, setMics] = useState<{ deviceId: string; label: string }[]>([]);
   const [micId, setMicId] = useState(() => localStorage.getItem("summer.assistant.mic") || "default");
   const micIdRef = useRef(micId);
+  const [speakers, setSpeakers] = useState<{ deviceId: string; label: string }[]>([]);
+  const [speakerId, setSpeakerId] = useState(() => localStorage.getItem("summer.assistant.speaker") || "default");
 
   const abortRef = useRef<AbortController | null>(null);
   const recRef = useRef<ReturnType<typeof createRecognizer>>(null);
@@ -152,11 +157,18 @@ export default function AssistantPage() {
       .catch(() => setStatus({ enabled: false, model: "" }));
   }, []);
   useEffect(() => {
-    const load = () => listMics().then(setMics);
+    const load = () => {
+      listMics().then(setMics);
+      listSpeakers().then(setSpeakers);
+    };
     load();
     navigator.mediaDevices?.addEventListener?.("devicechange", load);
     return () => navigator.mediaDevices?.removeEventListener?.("devicechange", load);
   }, []);
+  useEffect(() => {
+    setSpeaker(speakerId);
+    localStorage.setItem("summer.assistant.speaker", speakerId);
+  }, [speakerId]);
   useEffect(() => {
     micIdRef.current = micId;
     localStorage.setItem("summer.assistant.mic", micId);
@@ -375,6 +387,7 @@ export default function AssistantPage() {
     recRef.current = rec;
     setListening(true);
     listMics().then(setMics); // labels resolve once permission is granted
+    listSpeakers().then(setSpeakers);
     try {
       rec.start();
     } catch {
@@ -589,6 +602,24 @@ export default function AssistantPage() {
               {mics.map((m) => (
                 <option key={m.deviceId} value={m.deviceId}>
                   🎙 {m.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {speakerSelectSupported() && speakers.length > 1 && (
+            <select
+              className="mic-select"
+              value={speakerId}
+              title="Speaker — where the assistant's voice plays"
+              onChange={(e) => {
+                setSpeakerId(e.target.value);
+                stopSpeakingNow();
+              }}
+            >
+              <option value="default">🔈 Default speaker</option>
+              {speakers.map((s) => (
+                <option key={s.deviceId} value={s.deviceId}>
+                  🔈 {s.label}
                 </option>
               ))}
             </select>

@@ -106,6 +106,35 @@ export async function listMics(): Promise<{ deviceId: string; label: string }[]>
   }
 }
 
+/** Output devices (speakers/headphones). Labels appear once the mic permission has been granted. */
+export async function listSpeakers(): Promise<{ deviceId: string; label: string }[]> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) return [];
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices
+      .filter((d) => d.kind === "audiooutput" && d.deviceId && d.deviceId !== "default" && d.deviceId !== "communications")
+      .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Speaker ${i + 1}` }));
+  } catch {
+    return [];
+  }
+}
+
+/** Choosing an output device needs HTMLMediaElement.setSinkId (Chrome/Edge; not Firefox/Safari). */
+export const speakerSelectSupported = () => typeof Audio !== "undefined" && "setSinkId" in Audio.prototype;
+
+let speakerId = "default"; // where the assistant's voice plays
+export function setSpeaker(id: string) {
+  speakerId = id || "default";
+}
+async function routeToSpeaker(a: HTMLAudioElement) {
+  if (speakerId === "default" || !speakerSelectSupported()) return;
+  try {
+    await (a as HTMLAudioElement & { setSinkId(id: string): Promise<void> }).setSinkId(speakerId);
+  } catch {
+    /* device unplugged or blocked — fall back to the default output */
+  }
+}
+
 function pickAudioMime(): string {
   const M = typeof MediaRecorder !== "undefined" ? MediaRecorder : null;
   const opts = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/ogg", "audio/mp4"];
@@ -386,7 +415,9 @@ export function createSpeech(lang: Lang, opts?: { onStart?: () => void; onEnd?: 
         }
         if (!r.ok) throw new Error(`tts-${r.status}`);
         const { audio, mime } = (await r.json()) as { audio: string; mime?: string };
-        return new Audio(`data:${mime || "audio/mpeg"};base64,${audio}`);
+        const a = new Audio(`data:${mime || "audio/mpeg"};base64,${audio}`);
+        await routeToSpeaker(a);
+        return a;
       })
       .then((a) => {
         slots[idx] = stopped ? null : a;
