@@ -137,6 +137,7 @@ export default function AssistantPage() {
   const utterBufRef = useRef(""); // finalized speech waiting for the end-of-turn pause
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSpokenRef = useRef(""); // the assistant's last spoken reply, normalised — for echo rejection
+  const interruptedAtRef = useRef(0); // when a spoken stop phrase last cut the assistant off
   const speechEndedAtRef = useRef(0); // ignore the mic for a beat after the assistant stops (speaker echo)
   const speechRef = useRef<Speech | null>(null); // active streaming-TTS queue
   const speechCancelledRef = useRef(false); // barge-in: stop the current reply from resuming speech
@@ -211,6 +212,40 @@ export default function AssistantPage() {
     }
   };
 
+  /** Short "shut up and let me talk" phrases that cut the assistant off mid-reply. */
+  const STOP_PHRASES = [
+    "stop", "stop it", "stop talking", "summer stop", "stop summer", "hey summer stop", "wait", "hold on", "enough",
+    "be quiet", "quiet", "shut up",
+  ];
+  /** After the assistant stops, its voice still rings in the room/mic for a moment — ignore the mic that long. */
+  const ECHO_GRACE_MS = 1800;
+  /** In conversation mode the mic is deaf to everything but stop phrases while the assistant thinks, talks or has just talked. */
+  const assistantActive = () =>
+    speakingRef.current || busyRef.current || Date.now() - speechEndedAtRef.current < ECHO_GRACE_MS;
+  /** Did the user just say a stop phrase (and not the assistant itself, via speaker echo)? */
+  const isStopPhrase = (t: string) => {
+    const a = norm(t);
+    if (!a || a.split(" ").length > 3 || !STOP_PHRASES.includes(a)) return false;
+    // the assistant just said this word itself — that's echo, not the user
+    const tail = lastSpokenRef.current.slice(-60);
+    return !` ${tail} `.includes(` ${a} `);
+  };
+
+  /** Barge-in by voice: cut off speech AND any answer still streaming, then the user talks. */
+  const interruptNow = () => {
+    if (busyRef.current) {
+      abortRef.current?.abort();
+      busyRef.current = false;
+      setBusy(false);
+    }
+    stopSpeakingNow();
+    utterBufRef.current = "";
+    clearSilenceTimer();
+    setInput("");
+    interruptedAtRef.current = Date.now();
+    recRef.current?.clearAudio();
+  };
+
   const stopSpeakingNow = () => {
     speechCancelledRef.current = true; // don't let an in-flight reply resume talking
     speechRef.current?.stop();
@@ -230,11 +265,11 @@ export default function AssistantPage() {
     const preview = utterBufRef.current.trim();
     utterBufRef.current = "";
     // assistant is (or just was) talking — this is speaker echo, drop it
-    if (speakingRef.current || Date.now() - speechEndedAtRef.current < 600) {
+    if (assistantActive()) {
       recRef.current?.clearAudio();
       return;
     }
-    const minLen = busyRef.current ? 6 : 2;
+    const minLen = 2;
 
     let text = preview;
     const rec = recRef.current;
@@ -274,7 +309,11 @@ export default function AssistantPage() {
         onPartial: (t) => {
           // In conversation mode, don't listen while the assistant is talking (or
           // just finished) — the mic only hears the speakers, not the user.
-          if (convRef.current && (speakingRef.current || Date.now() - speechEndedAtRef.current < 600)) return;
+          // Exception: a short stop phrase ("stop", "wait"…) interrupts it.
+          if (convRef.current && assistantActive()) {
+            if (isStopPhrase(t)) interruptNow();
+            return;
+          }
           if (convRef.current && isEcho(t)) return;
           setInput(utterBufRef.current ? `${utterBufRef.current} ${t}` : t);
         },
@@ -283,7 +322,13 @@ export default function AssistantPage() {
             setInput(t);
             return;
           }
-          if (speakingRef.current || Date.now() - speechEndedAtRef.current < 600) return; // assistant's own voice
+          if (assistantActive() && isStopPhrase(t)) {
+            interruptNow();
+            return;
+          }
+          // the final transcript of the stop phrase itself arrives just after the interrupt — swallow it
+          if (Date.now() - interruptedAtRef.current < 1500 && STOP_PHRASES.includes(norm(t))) return;
+          if (assistantActive()) return; // assistant's own voice, or noise while it works
           if (isEcho(t)) return;
           utterBufRef.current = `${utterBufRef.current} ${t}`.trim();
           setInput(utterBufRef.current);
@@ -380,7 +425,6 @@ export default function AssistantPage() {
           speakingRef.current = false;
           setSpeaking(false);
           speechEndedAtRef.current = Date.now();
-          lastSpokenRef.current = "";
           speechRef.current = null;
           recRef.current?.clearAudio(); // drop any echo the mic recorded while it spoke
         },
@@ -677,8 +721,8 @@ export default function AssistantPage() {
           onChange={(e) => setInput(e.target.value)}
           disabled={busy && !convMode}
         />
-        {busy ? (
-          <button type="button" className="btn" onClick={() => abortRef.current?.abort()}>
+        {busy || speaking ? (
+          <button type="button" className="btn danger" onClick={interruptNow}>
             Stop
           </button>
         ) : (
