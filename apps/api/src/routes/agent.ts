@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { env } from "../env.js";
 import { runAgent, type AgentEvent } from "../agent/chat.js";
 import { agentEnabled, MODEL, provider } from "../agent/provider.js";
 import { ttsEnabled, synthesize } from "../agent/tts.js";
@@ -73,6 +74,9 @@ export async function agentRoutes(app: FastifyInstance) {
 
     reply.hijack();
     reply.raw.writeHead(200, {
+      // hijack() bypasses @fastify/cors, so the streaming response sets it itself
+      "Access-Control-Allow-Origin": env.corsOrigin,
+      Vary: "Origin",
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
